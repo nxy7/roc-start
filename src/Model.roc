@@ -46,12 +46,18 @@ Model : {
     ],
 }
 
-MenuData a : { menu : List Str, fullMenu : List Str, pageFirstItem : U64 }a
+MenuData a : { 
+    menu : List Str, 
+    fullMenu : List Str, 
+    pageFirstItem : U64, 
+    menuRow: I32 
+}a
 
 SingleSelectMenuData : {
     menu : List Str,
     fullMenu : List Str,
     pageFirstItem : U64,
+    menuRow : I32,
 }
 
 MultiSelectMenuData : {
@@ -59,6 +65,7 @@ MultiSelectMenuData : {
     fullMenu : List Str,
     selected : List Str,
     pageFirstItem : U64,
+    menuRow : I32,
 }
 
 Configuration : {
@@ -95,7 +102,7 @@ paginate = \model ->
 
 paginateHelper : Model, MenuData a -> { menuData: MenuData a, cursor: Core.Position }
 paginateHelper = \model, menuData ->
-    maxItems = model.screen.height - (model.menuRow + 1) |> Num.toU64
+    maxItems = model.screen.height - (menuData.menuRow + 1) |> Num.toU64
     pageFirstItem =
         if List.len menuData.menu < maxItems && menuData.pageFirstItem > 0 then
             idx = Num.toI64 (List.len menuData.fullMenu) - Num.toI64 maxItems
@@ -103,49 +110,75 @@ paginateHelper = \model, menuData ->
         else
             menuData.pageFirstItem
     menu = List.sublist menuData.fullMenu { start: pageFirstItem, len: maxItems }
-    curRow =
+    cursorRow =
         if model.cursor.row >= menuData.menuRow + Num.toI32 (List.len menu) && List.len menu > 0 then
-            model.menuRow + Num.toI32 (List.len menu) - 1
+            menuData.menuRow + Num.toI32 (List.len menu) - 1
         else
             model.cursor.row
-    cursor = { row: curRow, col: model.cursor.col }
+    cursor = { row: cursorRow, col: model.cursor.col }
     { menuData: { menuData & menu, pageFirstItem }, cursor }
 
 ## Move to the next page if possible
 nextPage : Model -> Model
-nextPage = \model ->
-    maxItems = model.screen.height - (model.menuRow + 1) |> Num.toU64
-    if isNotLastPage model then
-        pageFirstItem = model.pageFirstItem + maxItems
-        menu = List.sublist model.fullMenu { start: pageFirstItem, len: maxItems }
-        cursor = { row: model.menuRow, col: model.cursor.col }
-        paginate { model & menu, pageFirstItem, cursor }
-    else
-        model
+nextPage = \model -> 
+    when model.state is
+        PlatformSelect stateData if isNotLastPage model ->
+            { menuData, cursor } = nextPageHelper model stateData.menuData
+            { model & cursor, state: PlatformSelect { stateData & menuData } }
+        PackageSelect stateData if isNotLastPage model ->
+            { menuData, cursor } = nextPageHelper model stateData.menuData
+            { model & cursor, state: PackageSelect { stateData & menuData } }
+        _ ->
+            model
 
 nextPageHelper : Model, MenuData a -> { menuData: MenuData a, cursor: Core.Position }
+nextPageHelper = \model, menuData ->
+    maxItems = model.screen.height - (menuData.menuRow + 1) |> Num.toU64
+    pageFirstItem = model.pageFirstItem + maxItems
+    menu = List.sublist menuData.fullMenu { start: pageFirstItem, len: maxItems }
+    cursor = { row: menuData.menuRow, col: model.cursor.col }
+    { menuData: { menuData & menu, pageFirstItem }, cursor }
 
 ## Move to the previous page if possible
 prevPage : Model -> Model
 prevPage = \model ->
-    maxItems = model.screen.height - (model.menuRow + 1) |> Num.toU64
-    if isNotFirstPage model then
-        pageFirstItem = if (Num.toI64 model.pageFirstItem - Num.toI64 maxItems) > 0 then model.pageFirstItem - maxItems else 0
-        menu = List.sublist model.fullMenu { start: pageFirstItem, len: maxItems }
-        cursor = { row: model.menuRow, col: model.cursor.col }
-        paginate { model & menu, pageFirstItem, cursor }
-    else
-        model
+    when model.state is
+        PlatformSelect stateData if isNotFirstPage model ->
+            { menuData, cursor } = prevPageHelper model stateData.menuData
+            { model & cursor, state: PlatformSelect { stateData & menuData } }
+        PackageSelect stateData if isNotFirstPage model ->
+            { menuData, cursor } = prevPageHelper model stateData.menuData
+            { model & cursor, state: PackageSelect { stateData & menuData } }
+        _ ->
+            model
+
+prevPageHelper : Model, MenuData a -> { menuData: MenuData a, cursor: Core.Position }
+prevPageHelper = \model, menuData ->
+    maxItems = model.screen.height - (menuData.menuRow + 1) |> Num.toU64
+    pageFirstItem = if (Num.toI64 menuData.pageFirstItem - Num.toI64 maxItems) > 0 then menuData.pageFirstItem - maxItems else 0
+    menu = List.sublist menuData.fullMenu { start: pageFirstItem, len: maxItems }
+    cursor = { row: menuData.menuRow, col: model.cursor.col }
+    { menuData: { menuData & menu, pageFirstItem }, cursor }
 
 ## Check if the current page is not the first page
 isNotFirstPage : Model -> Bool
-isNotFirstPage = \model -> model.pageFirstItem > 0
+isNotFirstPage = \model -> 
+    when model.state is
+        PackageSelect { menuData } -> menuData.pageFirstItem > 0
+        PlatformSelect { menuData } -> menuData.pageFirstItem > 0
+        _ -> Bool.false
 
 ## Check if the current page is not the last page
 isNotLastPage : Model -> Bool
 isNotLastPage = \model ->
-    maxItems = model.screen.height - (model.menuRow + 1) |> Num.toU64
-    model.pageFirstItem + maxItems < List.len model.fullMenu
+    when model.state is
+        PackageSelect { menuData } ->
+            maxItems = model.screen.height - (menuData.menuRow + 1) |> Num.toU64
+            model.pageFirstItem + maxItems < List.len menuData.fullMenu
+        PlatformSelect { menuData } ->
+            maxItems = model.screen.height - (menuData.menuRow + 1) |> Num.toU64
+            menuData.pageFirstItem + maxItems < List.len menuData.fullMenu
+        _ -> Bool.false
 
 ## Move the cursor up or down
 moveCursor : Model, [Up, Down] -> Model
@@ -299,17 +332,11 @@ clearSearchFilter : Model -> Model
 clearSearchFilter = \model ->
     when model.state is
         PackageSelect _ ->
-            { model &
-                fullMenu: model.packageList,
-                # cursor: { row: model.menuRow, col: 2 },
-            }
+            { model & fullMenu: model.packageList }
             |> paginate
 
         PlatformSelect _ ->
-            { model &
-                fullMenu: model.platformList,
-                # cursor: { row: model.menuRow, col: 2 },
-            }
+            { model & fullMenu: model.platformList }
             |> paginate
 
         _ -> model

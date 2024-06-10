@@ -32,22 +32,33 @@ Model : {
     screen : Core.ScreenSize,
     cursor : Core.Position,
     menuRow : I32,
-    pageFirstItem : U64,
-    menu : List Str,
-    fullMenu : List Str,
-    selected : List Str,
     inputs : List Core.Input,
     packageList : List Str,
     platformList : List Str,
     state : [
         InputAppName { nameBuffer : List U8, config : Configuration },
         Search { searchBuffer : List U8, config : Configuration, sender : [Platform, Package] },
-        PlatformSelect { config : Configuration },
-        PackageSelect { config : Configuration },
+        PlatformSelect { config : Configuration, menuData : SingleSelectMenuData },
+        PackageSelect { config : Configuration, menuData : MultiSelectMenuData },
         Confirmation { config : Configuration },
         Finished { config : Configuration },
         UserExited,
     ],
+}
+
+MenuData a : { menu : List Str, fullMenu : List Str, pageFirstItem : U64 }a
+
+SingleSelectMenuData : {
+    menu : List Str,
+    fullMenu : List Str,
+    pageFirstItem : U64,
+}
+
+MultiSelectMenuData : {
+    menu : List Str,
+    fullMenu : List Str,
+    selected : List Str,
+    pageFirstItem : U64,
 }
 
 Configuration : {
@@ -64,12 +75,8 @@ init = \platformList, packageList -> {
     screen: { width: 0, height: 0 },
     cursor: { row: 2, col: 2 },
     menuRow: 2,
-    pageFirstItem: 0,
-    menu: platformList,
-    fullMenu: platformList,
     platformList,
     packageList,
-    selected: [],
     inputs: List.withCapacity 1000,
     state: InputAppName { nameBuffer: [], config: emptyConfig },
 }
@@ -77,21 +84,32 @@ init = \platformList, packageList -> {
 ## Split the menu into pages, and adjust the cursor position if necessary
 paginate : Model -> Model
 paginate = \model ->
+    when model.state is
+        PlatformSelect stateData ->
+            { menuData, curosr } = paginateHelper model stateData.menuData
+            { model & cursor, state: PlatformSelect { stateData & menuData } }
+        PackageSeelct stateData ->
+            { menuData, curosr } = paginateHelper model stateData.menuData
+            { model & cursor, state: PackageSelect { stateData & menuData } }
+        _ -> model
+
+paginateHelper : Model, MenuData a -> { menuData: MenuData a, cursor: Core.Position }
+paginateHelper = \model, menuData ->
     maxItems = model.screen.height - (model.menuRow + 1) |> Num.toU64
     pageFirstItem =
-        if List.len model.menu < maxItems && model.pageFirstItem > 0 then
-            idx = Num.toI64 (List.len model.fullMenu) - Num.toI64 maxItems
+        if List.len menuData.menu < maxItems && menuData.pageFirstItem > 0 then
+            idx = Num.toI64 (List.len menuData.fullMenu) - Num.toI64 maxItems
             if idx >= 0 then Num.toU64 idx else 0
         else
-            model.pageFirstItem
-    menu = List.sublist model.fullMenu { start: pageFirstItem, len: maxItems }
+            menuData.pageFirstItem
+    menu = List.sublist menuData.fullMenu { start: pageFirstItem, len: maxItems }
     curRow =
-        if model.cursor.row >= model.menuRow + Num.toI32 (List.len menu) && List.len menu > 0 then
+        if model.cursor.row >= menuData.menuRow + Num.toI32 (List.len menu) && List.len menu > 0 then
             model.menuRow + Num.toI32 (List.len menu) - 1
         else
             model.cursor.row
     cursor = { row: curRow, col: model.cursor.col }
-    { model & menu, pageFirstItem, cursor }
+    { menuData: { menuData & menu, pageFirstItem }, cursor }
 
 ## Move to the next page if possible
 nextPage : Model -> Model
@@ -104,6 +122,8 @@ nextPage = \model ->
         paginate { model & menu, pageFirstItem, cursor }
     else
         model
+
+nextPageHelper : Model, MenuData a -> { menuData: MenuData a, cursor: Core.Position }
 
 ## Move to the previous page if possible
 prevPage : Model -> Model

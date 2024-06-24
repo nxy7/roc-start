@@ -190,13 +190,9 @@ handleTypeSelectInput = \model, input ->
             KeyPress Enter -> SingleSelect
             KeyPress Up -> CursorUp
             KeyPress Down -> CursorDown
-            KeyPress Right -> NextPage
-            KeyPress GreaterThanSign -> NextPage
-            KeyPress FullStop -> NextPage
-            KeyPress Left -> PrevPage
-            KeyPress LessThanSign -> PrevPage
-            KeyPress Comma -> PrevPage
             KeyPress GraveAccent -> Secret
+            KeyPress Right | KeyPress GreaterThanSign | KeyPress FullStop -> NextPage
+            KeyPress Left | KeyPress LessThanSign | KeyPress Comma -> PrevPage
             _ -> None
     Task.ok (Controller.applyAction { model, action })
 
@@ -206,19 +202,14 @@ handlePlatformSelectInput = \model, input ->
     action =
         when input is
             CtrlC -> Exit
-            KeyPress LowerS -> Search
-            KeyPress UpperS -> Search
+            KeyPress LowerS | KeyPress UpperS -> Search
             KeyPress Enter -> SingleSelect
             KeyPress Up -> CursorUp
             KeyPress Down -> CursorDown
             KeyPress Delete -> GoBack
             KeyPress Escape -> ClearFilter
-            KeyPress Right -> NextPage
-            KeyPress GreaterThanSign -> NextPage
-            KeyPress FullStop -> NextPage
-            KeyPress Left -> PrevPage
-            KeyPress LessThanSign -> PrevPage
-            KeyPress Comma -> PrevPage
+            KeyPress Right | KeyPress GreaterThanSign | KeyPress FullStop -> NextPage
+            KeyPress Left | KeyPress LessThanSign | KeyPress Comma -> PrevPage
             _ -> None
     Task.ok (Controller.applyAction { model, action })
 
@@ -228,20 +219,15 @@ handlePackageSelectInput = \model, input ->
     action =
         when input is
             CtrlC -> Exit
-            KeyPress LowerS -> Search
-            KeyPress UpperS -> Search
+            KeyPress LowerS | KeyPress UpperS -> Search
             KeyPress Enter -> MultiConfirm
             KeyPress Space -> MultiSelect
             KeyPress Up -> CursorUp
             KeyPress Down -> CursorDown
             KeyPress Delete -> GoBack
             KeyPress Escape -> ClearFilter
-            KeyPress Right -> NextPage
-            KeyPress GreaterThanSign -> NextPage
-            KeyPress FullStop -> NextPage
-            KeyPress Left -> PrevPage
-            KeyPress LessThanSign -> PrevPage
-            KeyPress Comma -> PrevPage
+            KeyPress Right | KeyPress GreaterThanSign | KeyPress FullStop -> NextPage
+            KeyPress Left | KeyPress LessThanSign | KeyPress Comma -> PrevPage
             _ -> None
     Task.ok (Controller.applyAction { model, action })
 
@@ -262,9 +248,9 @@ handleSearchInput = \model, input ->
 handleInputAppNameInput : Model, Core.Input -> Task [Step Model, Done Model] _
 handleInputAppNameInput = \model, input ->
     bufferLen =
-        when model.state is
-            InputAppName { nameBuffer } -> List.len nameBuffer
-            _ -> 0
+        Model.getBuffer model
+        |> Result.withDefault []
+        |> List.len
     (action, keyPress) =
         when input is
             CtrlC -> (Exit, None)

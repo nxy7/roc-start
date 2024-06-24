@@ -7,6 +7,8 @@ module [
     getHighlightedItem,
     getSelectedItems,
     menuIsFiltered,
+    getBuffer,
+    getConfig,
 ]
 
 import ansi.Core
@@ -89,3 +91,23 @@ menuIsFiltered = \model ->
         PlatformSelect _ -> List.len model.fullMenu < List.len model.platformList
         PackageSelect _ -> List.len model.fullMenu < List.len model.packageList
         _ -> Bool.false
+
+getBuffer : Model -> Result (List U8) [InvalidState]
+getBuffer = \model ->
+    when model.state is
+        InputAppName { nameBuffer } -> Ok nameBuffer
+        Search { searchBuffer } -> Ok searchBuffer
+        _ -> Err InvalidState
+
+getConfig : Model -> Result Configuration [InvalidState]
+getConfig = \model ->
+    when model.state is
+        TypeSelect { config } -> Ok config
+        InputAppName { config } -> Ok config
+        Search { config } -> Ok config
+        PlatformSelect { config } -> Ok config
+        PackageSelect { config } -> Ok config
+        Confirmation { config } -> Ok config
+        Finished { config } -> Ok config
+        Splash { config } -> Ok config
+        UserExited -> Err InvalidState

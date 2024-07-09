@@ -8,6 +8,7 @@ app [main] {
 
 import ArgParser
 import Controller
+import InputHandlers
 import Model exposing [Model]
 import Repo exposing [RepositoryEntry, RemoteRepoEntry, CacheRepoEntry]
 import View
@@ -170,144 +171,21 @@ render = \model ->
 handleInput : Model, Core.Input -> Task [Step Model, Done Model] _
 handleInput = \model, input ->
     when model.state is
-        TypeSelect _ -> handleTypeSelectInput model input
-        InputAppName _ -> handleInputAppNameInput model input
-        PlatformSelect _ -> handlePlatformSelectInput model input
-        PackageSelect _ -> handlePackageSelectInput model input
-        Search _ -> handleSearchInput model input
-        Confirmation _ -> handleConfirmationInput model input
-        Splash _ -> handleSplashInput model input
-        _ -> handleDefaultInput model input
-
-## Default input handler which ensures that the program can always be exited.
-## This ensures that even if you forget to handle input for a state, or end up
-## in a state that doesn't have an input handler, the program can still be exited.
-handleDefaultInput : Model, Core.Input -> Task [Step Model, Done Model] _
-handleDefaultInput = \model, input ->
-    action =
-        when input is
-            CtrlC -> Exit
-            _ -> None
-    Task.ok (Controller.applyAction { model, action })
-
-handleTypeSelectInput : Model, Core.Input -> Task [Step Model, Done Model] _
-handleTypeSelectInput = \model, input ->
-    action =
-        when input is
-            CtrlC -> Exit
-            KeyPress Enter -> SingleSelect
-            KeyPress Up -> CursorUp
-            KeyPress Down -> CursorDown
-            KeyPress Right -> NextPage
-            KeyPress GreaterThanSign -> NextPage
-            KeyPress FullStop -> NextPage
-            KeyPress Left -> PrevPage
-            KeyPress LessThanSign -> PrevPage
-            KeyPress Comma -> PrevPage
-            KeyPress GraveAccent -> Secret
-            _ -> None
-    Task.ok (Controller.applyAction { model, action })
-
-## The input handler for the PlatformSelect state.
-handlePlatformSelectInput : Model, Core.Input -> Task [Step Model, Done Model] _
-handlePlatformSelectInput = \model, input ->
-    action =
-        when input is
-            CtrlC -> Exit
-            KeyPress LowerS -> Search
-            KeyPress UpperS -> Search
-            KeyPress Enter -> SingleSelect
-            KeyPress Up -> CursorUp
-            KeyPress Down -> CursorDown
-            KeyPress Delete -> GoBack
-            KeyPress Escape -> ClearFilter
-            KeyPress Right -> NextPage
-            KeyPress GreaterThanSign -> NextPage
-            KeyPress FullStop -> NextPage
-            KeyPress Left -> PrevPage
-            KeyPress LessThanSign -> PrevPage
-            KeyPress Comma -> PrevPage
-            _ -> None
-    Task.ok (Controller.applyAction { model, action })
-
-## The input handler for the PackageSelect state.
-handlePackageSelectInput : Model, Core.Input -> Task [Step Model, Done Model] _
-handlePackageSelectInput = \model, input ->
-    action =
-        when input is
-            CtrlC -> Exit
-            KeyPress LowerS -> Search
-            KeyPress UpperS -> Search
-            KeyPress Enter -> MultiConfirm
-            KeyPress Space -> MultiSelect
-            KeyPress Up -> CursorUp
-            KeyPress Down -> CursorDown
-            KeyPress Delete -> GoBack
-            KeyPress Escape -> ClearFilter
-            KeyPress Right -> NextPage
-            KeyPress GreaterThanSign -> NextPage
-            KeyPress FullStop -> NextPage
-            KeyPress Left -> PrevPage
-            KeyPress LessThanSign -> PrevPage
-            KeyPress Comma -> PrevPage
-            _ -> None
-    Task.ok (Controller.applyAction { model, action })
-
-## The input handler for the Search state.
-handleSearchInput : Model, Core.Input -> Task [Step Model, Done Model] _
-handleSearchInput = \model, input ->
-    (action, keyPress) =
-        when input is
-            CtrlC -> (Exit, None)
-            KeyPress Enter -> (SearchGo, None)
-            KeyPress Escape -> (Cancel, None)
-            KeyPress Delete -> (TextBackspace, None)
-            KeyPress key -> (TextInput, KeyPress key)
-            _ -> (None, None)
-    Task.ok (Controller.applyAction { model, action, keyPress })
-
-## The input handler for the InputAppName state.
-handleInputAppNameInput : Model, Core.Input -> Task [Step Model, Done Model] _
-handleInputAppNameInput = \model, input ->
-    bufferLen =
-        when model.state is
-            InputAppName { nameBuffer } -> List.len nameBuffer
-            _ -> 0
-    (action, keyPress) =
-        when input is
-            CtrlC -> (Exit, None)
-            KeyPress Enter -> (TextSubmit, None)
-            KeyPress Delete -> if bufferLen == 0 then (GoBack, None) else (TextBackspace, None)
-            KeyPress key -> (TextInput, KeyPress key)
-            _ -> (None, None)
-    Task.ok (Controller.applyAction { model, action, keyPress })
-
-## The input handler for the Confirmation state.
-handleConfirmationInput : Model, Core.Input -> Task [Step Model, Done Model] _
-handleConfirmationInput = \model, input ->
-    action =
-        when input is
-            CtrlC -> Exit
-            KeyPress Enter -> Finish
-            KeyPress Delete -> GoBack
-            _ -> None
-    Task.ok (Controller.applyAction { model, action })
-
-handleSplashInput : Model, Core.Input -> Task [Step Model, Done Model] _
-handleSplashInput = \model, input ->
-    action =
-        when input is
-            CtrlC -> Exit
-            KeyPress Delete -> GoBack
-            _ -> None
-    Task.ok (Controller.applyAction { model, action })
+        TypeSelect _ -> InputHandlers.typeSelect model input
+        InputAppName _ -> InputHandlers.inputAppName model input
+        PlatformSelect _ -> InputHandlers.platformSelect model input
+        PackageSelect _ -> InputHandlers.packageSelect model input
+        Search _ -> InputHandlers.search model input
+        Confirmation _ -> InputHandlers.confirmation model input
+        Splash _ -> InputHandlers.splash model input
+        _ -> InputHandlers.default model input
 
 ## Create the data directory if it doesn't exist, and return the string version of the path.
 getAndCreateDataDir : Task Str _
 getAndCreateDataDir =
     home = Env.var! "HOME"
     dataDir = "$(home)/.roc-start"
-    if checkForDir! dataDir then
+    if dirExists! dataDir then
         Task.ok dataDir
     else
         Dir.create! dataDir
@@ -315,8 +193,8 @@ getAndCreateDataDir =
 
 ## Check if a directory exists at the given path.
 ## Guarantee Task.ok Bool result.
-checkForDir : Str -> Task Bool _
-checkForDir = \path ->
+dirExists : Str -> Task Bool _
+dirExists = \path ->
     Path.isDir (Path.fromStr path)
         |> Task.attempt! \res ->
             when res is
@@ -589,8 +467,7 @@ getRepoDict = \bytes ->
 getAppStubsIfNeeded : List Str, Bool -> Task {} _
 getAppStubsIfNeeded = \platforms, forceUpdate ->
     dataDir = getAndCreateDataDir!
-    dirExists = checkForDir! "$(dataDir)/app-stubs"
-    if !dirExists || forceUpdate then
+    if !(dirExists! "$(dataDir)/app-stubs") || forceUpdate then
         getAppStubs! platforms
     else
         Task.ok {}
@@ -641,12 +518,12 @@ getAppStubsLoop = \{ platforms, dir } ->
 
 ## Create a directory at the given path if it doesn't already exist.
 getAndCreateDir : Str -> Task Str _
-getAndCreateDir = \dirPath ->
-    if checkForDir! dirPath then
-        Task.ok dirPath
+getAndCreateDir = \pathStr ->
+    if dirExists! pathStr then
+        Task.ok pathStr
     else
-        Dir.create! dirPath
-        Task.ok dirPath
+        Dir.createAll! pathStr
+        Task.ok pathStr
 
 ## Generate a roc file from the given fileName, platform, and packageList.
 createRocFile : Configuration, { packages : Dict Str RepositoryEntry, platforms : Dict Str RepositoryEntry } -> Task {} _
